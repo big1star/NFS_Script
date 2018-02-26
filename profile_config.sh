@@ -7,7 +7,11 @@
 # Modify: 
 
 #default profile path
-PROFILE_PATH="/Customer/profile"
+#PROFILE_PATH="/Customer/profile"
+PROFILE_PATH="./profile"
+
+#default profile backup name
+BACKUP_PROFILE_NAME="profile_backup_walle"
 
 #list of partion need to be mount by NFS
 PARTITION_LIST="/mslib /applications"
@@ -22,6 +26,49 @@ NETWORK_CONFIG_FLAG="network config start."
 
 #network default config
 ETHER="eth0"
+
+# Function: Backup raw profile and do nothing if backup file is existed.
+# para1: Path of profile
+# Return none
+BackupProfile()
+{
+    profile_path=$1
+	if [ -f $DO_PROFILE_PATH ]; then
+        profile_parent_path=${profile_path%/*}
+        backup_profile_name=${profile_parent_path}"/$BACKUP_PROFILE_NAME"
+        if [ -f $backup_profile_name ]; then
+            echo "Profile backup is existed. Don't need to backup again."
+        else
+            cp $profile_path $backup_profile_name -f
+        fi
+	else
+		echo "Profile $DO_PROFILE_PATH not exist!"
+		exit 1
+	fi   
+}
+
+# Function: Cover profile file with backup profile.
+# para1: Path of profile
+# Return none
+RecoverProfile()
+{    
+    profile_path=$1
+	if [ -f $DO_PROFILE_PATH ]; then
+        profile_parent_path=${profile_path%/*}
+        backup_profile_name=${profile_parent_path}"/$BACKUP_PROFILE_NAME"
+        if [ -f $backup_profile_name ]; then
+            cp $backup_profile_name $profile_path -f
+            rm $backup_profile_name
+        else
+            echo "Profile backup is not existed. FAILED!!!!!!!!!!!!!!!"
+            exit 1
+        fi
+	else
+		echo "Profile $DO_PROFILE_PATH not exist!"
+		exit 1
+	fi   
+}
+
 
 # Function
 #
@@ -109,30 +156,11 @@ SetProfileMacAddr()
 	profile_path=$1
 	network_config_start=$(sed -n -e "/$NETWORK_CONFIG_FLAG/=" $profile_path)
 	set_new_mac="ifconfig $ETHER hw ether $2"
-	echo $set_new_mac
-	echo $network_config_start
 	sed -i "${network_config_start}a ifconfig $ETHER up" $profile_path
 	sed -i "${network_config_start}a $set_new_mac" $profile_path
 	sed -i "${network_config_start}a ifconfig $ETHER down" $profile_path
-	echo 'The new mac is: '
-	grep "hw ether" $profile_path
 }
 
-# Function: Disable the IP address in profile
-# para $1: Path of profile
-# Return none
-DisableProfileIpAddr()
-{
-	sed -i "/^ifconfig $ETHER .*/s/^/#/" $1
-}
-
-# Function: Disable the Gateway address in profile
-# para $1: Path of profile
-# Return none
-DisableProfileGatewayAddr()
-{
-	sed -i "/^route add default gw .*/s/^/#/" $1
-}
 
 # Function: Change the gateway address in profile
 # para $1: Path of profile
@@ -163,26 +191,6 @@ RemoveOriginalMount()
 	fi
 }
 
-# Function: Recover original mount operation
-# para $1: Path of profile
-# Return none
-RecoverOriginalMount()
-{
-	profile_path=$1
-	row_nums=$(sed -n -e "/# original mount/=" $profile_path)
-	continue_loop=1
-	while [ $continue_loop -eq 1 ]; do
-		for row in $row_nums; do
-			sed -i "${row}d" $profile_path
-			sed -i "$row{s/^#//g}" $profile_path
-			break;
-		done
-		row_nums=$(sed -n -e "/# original mount/=" $profile_path)
-		if [ "$row_nums" == "" ]; then
-			continue_loop=0
-		fi
-	done
-}
 
 # Function: Remove mounted NFS commmand
 # para $1: Path of profile
@@ -228,10 +236,7 @@ UserConfig()
 {	
 	config_str=$1
 	if [ "$config_str" == "disable" ]; then
-		DisableProfileIpAddr $PROFILE_PATH
-		DisableProfileGatewayAddr $PROFILE_PATH
-		RemoveMountedNFS $PROFILE_PATH
-		RecoverOriginalMount $PROFILE_PATH
+        RecoverProfile $PROFILE_PATH
 		echo "Recover all success"
 	else
 		echo "Unknown option $config_str !"
@@ -309,6 +314,7 @@ fi
 # config parameters
 if [ $# -eq 1 ]; then
 {
+    BackupProfile $PROFILE_PATH
 	DoConfig $PROFILE_PATH $1
 }
 else
