@@ -17,12 +17,18 @@ NFS_OPTIONS="nfsvers=3,vers=3,proto=tcp,nolock"
 
 USER_OPTIONS="disable enable"
 
+#FLAG
+NETWORK_CONFIG_FLAG="network config start."
+
+#network default config
+ETHER="eth0"
+
 # Function
 #
 # Return current system IP address.
 GetIpAddr()
 {
-	ip_addr=$(ifconfig eth0 | grep "inet addr" | awk '{ print $2}' | awk -F: '{print $2}')
+	ip_addr=$(ifconfig $ETHER | grep "inet addr" | awk '{ print $2}' | awk -F: '{print $2}')
 	echo $ip_addr
 }
 
@@ -33,6 +39,15 @@ GetGatewayAddr()
 {
 	gw_addr=$(route | grep 'default' | awk '{print $2}')
 	echo $gw_addr
+}
+
+#Function
+#
+#Return current system mac address
+GetMacAddr()
+{	
+	mac_addr=$(ifconfig $ETHER | grep "HWaddr" | awk '{ print $5}')
+	echo $mac_addr
 }
 
 # Function: Check the input string, if string not in "xxx.xxx.xxx.xxx" format, exit 1
@@ -47,15 +62,60 @@ CheckIpFormat()
 	fi
 }
 
+# Function: Check the input string, if string not in "xx.xx.xx.xx.xx.xx" format, exit 1
+# para $1: string need check
+# Return none
+CheckMacFormat()
+{
+	input_str=$1
+	if [ "$(echo $input_str | grep -E '([0-9a-fA-F]{2}\:){5}[0-9a-fA-F]{2}$')" == "" ]; then
+		echo 'Mac address $input_str is invalid! Please check your network!'	
+		exit 1
+	fi
+}
+
+# Function: Prepare for the network config
+#			Acutual just set a flag.
+# para $1: Path of profile
+# Return none
+PrepareNetworkConfig()
+{
+    profile_path=$1
+    network_config_position=$(sed -n -e "/^#ifconfig $ETHER/=" $profile_path)
+    if [ "$network_config_position" == "" ]; then
+        echo "Can't start network config correctly!!"
+        exit 1
+    fi
+    sed -i "${network_config_position}i # $NETWORK_CONFIG_FLAG" $profile_path
+}
+
 # Function: Change the IP address in profile
 # para $1: Path of profile
 # para $2: New IP address
 # Return none
 SetProfileIpAddr()
 {
-	sed -i "s/#ifconfig eth0 .*/ifconfig eth0 $2 netmask 255.255.255.0/g" $1
+	sed -i "s/#ifconfig $ETHER .*/ifconfig $ETHER $2 netmask 255.255.255.0/g" $1
 	echo 'The new ifconfig is: '
 	grep "ifconfig" $1
+}
+
+# Function: Change the MAC address in profile
+# para $1: Path of profile
+# para $2: New mac address
+# Return none
+SetProfileMacAddr()
+{
+	profile_path=$1
+	network_config_start=$(sed -n -e "/$NETWORK_CONFIG_FLAG/=" $profile_path)
+	set_new_mac="ifconfig $ETHER hw ether $2"
+	echo $set_new_mac
+	echo $network_config_start
+	sed -i "${network_config_start}a ifconfig $ETHER up" $profile_path
+	sed -i "${network_config_start}a $set_new_mac" $profile_path
+	sed -i "${network_config_start}a ifconfig $ETHER down" $profile_path
+	echo 'The new mac is: '
+	grep "hw ether" $profile_path
 }
 
 # Function: Disable the IP address in profile
@@ -63,7 +123,7 @@ SetProfileIpAddr()
 # Return none
 DisableProfileIpAddr()
 {
-	sed -i "/^ifconfig eth0 .*/s/^/#/" $1
+	sed -i "/^ifconfig $ETHER .*/s/^/#/" $1
 }
 
 # Function: Disable the Gateway address in profile
@@ -207,15 +267,19 @@ DoConfig()
 		ShowUsage
 	fi
 
+	MAC_ADDR=$(GetMacAddr)
 	IP_ADDR=$(GetIpAddr)
 	GW_ADDR=$(GetGatewayAddr)
 
-	#check both address, if address is invalid, exit the script.
+	#check all address, if address is invalid, exit the script.
+	CheckMacFormat $MAC_ADDR
 	CheckIpFormat $IP_ADDR
 	CheckIpFormat $GW_ADDR
-	
+
 	if [ -f $DO_PROFILE_PATH ]; then
 		#Set the default IP and gateway during system initial.
+		PrepareNetworkConfig $DO_PROFILE_PATH
+		SetProfileMacAddr $DO_PROFILE_PATH $MAC_ADDR
 		SetProfileIpAddr $DO_PROFILE_PATH $IP_ADDR
 		SetProfileGatewayAddr $DO_PROFILE_PATH $GW_ADDR
 	
