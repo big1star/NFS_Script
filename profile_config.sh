@@ -7,8 +7,7 @@
 # Modify: 
 
 #default profile path
-#PROFILE_PATH="/Customer/profile"
-PROFILE_PATH="./profile"
+PROFILE_PATH="/Customer/profile"
 
 #default profile backup name
 BACKUP_PROFILE_NAME="profile_backup_walle"
